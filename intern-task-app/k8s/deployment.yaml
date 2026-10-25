@@ -18,7 +18,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: intern-task-app
-          image: myapp:latest
+          image: intern-task-app:local
           imagePullPolicy: Never
           env:
             - name: PORT
@@ -30,6 +30,7 @@ spec:
             httpGet:
               path: /healthz
               port: http
+            initialDelaySeconds: 2
             periodSeconds: 5
           livenessProbe:
             httpGet:
