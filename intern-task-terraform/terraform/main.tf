@@ -56,6 +56,8 @@ locals {
       }
     ]
 
+
+
     runcmd = [
       "mkdir -p /opt/intern-task-app/app",
       "systemctl enable --now docker",
@@ -84,6 +86,66 @@ resource "aws_vpc" "main" {
   }
 }
 
+# Store VPC network traffic logs in CloudWatch for one year.
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  #checkov:skip=CKV_AWS_158:CloudWatch Logs encrypts data at rest by default; a customer-managed KMS key is not configured for this challenge.
+  name              = "/aws/vpc/intern-task-flow-logs"
+  retention_in_days = 365
+
+  tags = {
+    Name = "intern-task-flow-logs"
+  }
+}
+
+# Allow the VPC Flow Logs service to publish logs to CloudWatch.
+resource "aws_iam_role" "flow_logs" {
+  name = "intern-task-flow-logs-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "vpc-flow-logs.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# Restrict publishing permissions to this log group's streams.
+resource "aws_iam_role_policy" "flow_logs" {
+  name = "intern-task-flow-logs-policy"
+  role = aws_iam_role.flow_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "${aws_cloudwatch_log_group.flow_logs.arn}:*"
+    }]
+  })
+}
+
+# Enable logging of all VPC traffic, including accepted and rejected traffic.
+resource "aws_flow_log" "main" {
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  log_destination_type = "cloud-watch-logs"
+  log_destination      = aws_cloudwatch_log_group.flow_logs.arn
+  iam_role_arn         = aws_iam_role.flow_logs.arn
+
+  tags = {
+    Name = "intern-task-flow-logs"
+  }
+}
+
+
 resource "aws_default_security_group" "default" {
   vpc_id  = aws_vpc.main.id
   ingress = []
@@ -97,6 +159,7 @@ resource "aws_internet_gateway" "main" {
     Name = "intern-task-igw"
   }
 }
+
 
 resource "aws_subnet" "public" {
   #checkov:skip=CKV_AWS_130:The task requires a public subnet so the app can be reached directly.
@@ -188,5 +251,11 @@ resource "aws_instance" "app" {
 
   tags = {
     Name = "intern-task-app"
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 }
