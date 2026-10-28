@@ -49,3 +49,6 @@ jobs:
 
       - name: Plan
         run: terraform plan -input=false
+
+      - name: Test
+        run: terraform test
